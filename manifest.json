@@ -1,11 +1,10 @@
 {
-	"id": "sample-plugin",
-	"name": "Sample Plugin",
-	"version": "1.0.0",
+	"id": "obsidian-supercharged-workspaces",
+	"name": "Supercharged Workspaces",
+	"version": "0.0.1",
 	"minAppVersion": "0.15.0",
-	"description": "Demonstrates some of the capabilities of the Obsidian API.",
-	"author": "Obsidian",
-	"authorUrl": "https://obsidian.md",
-	"fundingUrl": "https://obsidian.md/pricing",
+	"description": "Save, load, and manage workspace layouts with enhanced features for power users.",
+	"author": "Kieran Mansfield",
+	"authorUrl": "https://kieranmansfield.com",
 	"isDesktopOnly": false
 }

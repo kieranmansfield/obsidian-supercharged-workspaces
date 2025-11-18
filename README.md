@@ -1,94 +1,126 @@
-# Obsidian Sample Plugin
+# Supercharged Workspaces
 
-This is a sample plugin for Obsidian (https://obsidian.md).
+A powerful Obsidian plugin that enhances workspace management by allowing you to save, load, and manage multiple workspace layouts with ease.
 
-This project uses TypeScript to provide type checking and documentation.
-The repo depends on the latest plugin API (obsidian.d.ts) in TypeScript Definition format, which contains TSDoc comments describing what it does.
+## Features
 
-This sample plugin demonstrates some of the basic functionality the plugin API can do.
-- Adds a ribbon icon, which shows a Notice when clicked.
-- Adds a command "Open Sample Modal" which opens a Modal.
-- Adds a plugin setting tab to the settings page.
-- Registers a global click event and output 'click' to the console.
-- Registers a global interval which logs 'setInterval' to the console.
+### 🚀 Core Functionality
 
-## First time developing plugins?
+-   **Save Workspaces**: Capture your current pane layout, open files, and workspace state
+-   **Load Workspaces**: Instantly switch between different workspace configurations
+-   **Manage Workspaces**: Rename, update, and delete saved workspaces
+-   **Status Bar Integration**: See your current workspace at a glance
+-   **Quick Switching**: Click the status bar to quickly switch workspaces
 
-Quick starting guide for new plugin devs:
+### 🎯 Use Cases
 
-- Check if [someone already developed a plugin for what you want](https://obsidian.md/plugins)! There might be an existing plugin similar enough that you can partner up with.
-- Make a copy of this repo as a template with the "Use this template" button (login to GitHub if you don't see it).
-- Clone your repo to a local development folder. For convenience, you can place this folder in your `.obsidian/plugins/your-plugin-name` folder.
-- Install NodeJS, then run `npm i` in the command line under your repo folder.
-- Run `npm run dev` to compile your plugin from `main.ts` to `main.js`.
-- Make changes to `main.ts` (or create new `.ts` files). Those changes should be automatically compiled into `main.js`.
-- Reload Obsidian to load the new version of your plugin.
-- Enable plugin in settings window.
-- For updates to the Obsidian API run `npm update` in the command line under your repo folder.
+-   **Writing Mode**: Minimal layout focused on your current document
+-   **Research Mode**: Multiple reference panes with graph view and backlinks
+-   **Review Mode**: Side-by-side comparison with calendar and daily notes
+-   **Project Workspaces**: Different layouts for different projects or contexts
 
-## Releasing new releases
+## Usage
 
-- Update your `manifest.json` with your new version number, such as `1.0.1`, and the minimum Obsidian version required for your latest release.
-- Update your `versions.json` file with `"new-plugin-version": "minimum-obsidian-version"` so older versions of Obsidian can download an older version of your plugin that's compatible.
-- Create new GitHub release using your new version number as the "Tag version". Use the exact version number, don't include a prefix `v`. See here for an example: https://github.com/obsidianmd/obsidian-sample-plugin/releases
-- Upload the files `manifest.json`, `main.js`, `styles.css` as binary attachments. Note: The manifest.json file must be in two places, first the root path of your repository and also in the release.
-- Publish the release.
+### Commands
 
-> You can simplify the version bump process by running `npm version patch`, `npm version minor` or `npm version major` after updating `minAppVersion` manually in `manifest.json`.
-> The command will bump version in `manifest.json` and `package.json`, and add the entry for the new version to `versions.json`
+Access these commands via the Command Palette (`Cmd/Ctrl + P`):
 
-## Adding your plugin to the community plugin list
+-   **Save current workspace**: Save your current layout with a name and description
+-   **Load workspace**: Open the workspace manager to select and load a workspace
+-   **Manage workspaces**: View all workspaces, rename, or delete them
+-   **Update current workspace**: Overwrite the most recently used workspace with current layout
 
-- Check the [plugin guidelines](https://docs.obsidian.md/Plugins/Releasing/Plugin+guidelines).
-- Publish an initial version.
-- Make sure you have a `README.md` file in the root of your repo.
-- Make a pull request at https://github.com/obsidianmd/obsidian-releases to add your plugin.
+### Quick Access
 
-## How to use
+-   **Ribbon Icon**: Click the 📋 icon in the left sidebar to open workspace manager
+-   **Status Bar**: Click the workspace name in the status bar to switch workspaces
 
-- Clone this repo.
-- Make sure your NodeJS is at least v16 (`node --version`).
-- `npm i` or `yarn` to install dependencies.
-- `npm run dev` to start compilation in watch mode.
+### Saving a Workspace
 
-## Manually installing the plugin
+1. Arrange your panes exactly how you want them
+2. Open Command Palette and run "Save current workspace"
+3. Enter a name (e.g., "Writing Mode", "Research Layout")
+4. Optionally add a description
+5. Click Save
 
-- Copy over `main.js`, `styles.css`, `manifest.json` to your vault `VaultFolder/.obsidian/plugins/your-plugin-id/`.
+### Loading a Workspace
 
-## Improve code quality with eslint (optional)
-- [ESLint](https://eslint.org/) is a tool that analyzes your code to quickly find problems. You can run ESLint against your plugin to find common bugs and ways to improve your code. 
-- To use eslint with this project, make sure to install eslint from terminal:
-  - `npm install -g eslint`
-- To use eslint to analyze this project use this command:
-  - `eslint main.ts`
-  - eslint will then create a report with suggestions for code improvement by file and line number.
-- If your source code is in a folder, such as `src`, you can use eslint with this command to analyze all files in that folder:
-  - `eslint ./src/`
+1. Click the workspace name in the status bar, or
+2. Use the ribbon icon, or
+3. Run "Load workspace" from Command Palette
+4. Click "Load" on the workspace you want to switch to
 
-## Funding URL
+### Managing Workspaces
 
-You can include funding URLs where people who use your plugin can financially support it.
+From the workspace manager modal, you can:
 
-The simple way is to set the `fundingUrl` field to your link in your `manifest.json` file:
+-   **Load**: Switch to that workspace layout
+-   **Rename**: Change the name or description
+-   **Delete**: Remove the workspace (with confirmation)
 
-```json
-{
-    "fundingUrl": "https://buymeacoffee.com"
-}
+## Settings
+
+Access settings via **Settings → Community plugins → Supercharged Workspaces**
+
+-   **Show status bar**: Toggle workspace name display in status bar
+-   **Auto-save current workspace**: Automatically update workspace when layout changes (experimental)
+-   **Workspace Statistics**: View how many workspaces you have saved
+
+## Installation
+
+### Manual Installation for Development
+
+```bash
+# Navigate to your vault's plugin folder
+cd /path/to/vault/.obsidian/plugins/
+
+# Clone or copy this plugin
+# Then install and build
+npm install
+npm run build
+
+# Reload Obsidian and enable the plugin
 ```
 
-If you have multiple URLs, you can also do:
+## Technical Details
 
-```json
-{
-    "fundingUrl": {
-        "Buy Me a Coffee": "https://buymeacoffee.com",
-        "GitHub Sponsor": "https://github.com/sponsors",
-        "Patreon": "https://www.patreon.com/"
-    }
-}
-```
+### Data Structure
 
-## API Documentation
+Workspaces are stored as JSON objects containing:
 
-See https://github.com/obsidianmd/obsidian-api
+-   **ID**: Unique identifier
+-   **Name**: User-friendly name
+-   **Description**: Optional description
+-   **Layout**: Complete Obsidian workspace layout object
+-   **Timestamps**: Created and last updated times
+
+### Storage
+
+All workspace data is stored in the plugin's data file at `.obsidian/plugins/obsidian-supercharged-workspaces/data.json`
+
+### Compatibility
+
+-   **Desktop**: Full support (Windows, macOS, Linux)
+-   **Mobile**: Full support (iOS, Android)
+-   **Minimum Obsidian Version**: 0.15.0
+
+## Roadmap
+
+Future enhancements planned:
+
+-   🔖 Workspace tags and categories
+-   ⌨️ Custom hotkeys per workspace
+-   🎨 Workspace-specific themes
+-   📊 Workspace usage analytics
+-   ⏰ Time-based workspace switching
+-   📁 Context-aware workspace detection
+-   🔄 Import/export workspace configurations
+-   👥 Workspace sharing
+
+## License
+
+MIT License - see LICENSE file for details.
+
+## Author
+
+Created by Kieran Mansfield
