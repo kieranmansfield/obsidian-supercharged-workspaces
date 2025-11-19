@@ -1,0 +1,1043 @@
+import { ItemView, WorkspaceLeaf, Menu, Modal, setIcon } from "obsidian";
+import { WorkspaceManager } from "./WorkspaceManager";
+import { RenameWorkspaceModal } from "./WorkspaceModal";
+import { WorkspaceConfig, WorkspaceFolder, SmartGroupType } from "./types";
+import SuperchargedWorkspacesPlugin from "../main";
+import { createFolderPrompt } from "./commands";
+
+export const VIEW_TYPE_WORKSPACES = "supercharged-workspaces-view";
+
+export class WorkspacesView extends ItemView {
+	private plugin: SuperchargedWorkspacesPlugin;
+	private workspaceManager: WorkspaceManager;
+	private draggedElement: HTMLElement | null = null;
+	private draggedWorkspaceId: string | null = null;
+	private draggedFromFolder: string | null = null;
+	private draggedFolderId: string | null = null;
+
+	constructor(leaf: WorkspaceLeaf, plugin: SuperchargedWorkspacesPlugin) {
+		super(leaf);
+		this.plugin = plugin;
+		this.workspaceManager = plugin.workspaceManager;
+	}
+
+	getViewType(): string {
+		return VIEW_TYPE_WORKSPACES;
+	}
+
+	getDisplayText(): string {
+		return "Workspaces";
+	}
+
+	getIcon(): string {
+		return "layout";
+	}
+
+	async onOpen() {
+		const container = this.containerEl.children[1];
+		container.empty();
+		container.addClass("workspaces-view");
+
+		this.renderWorkspaces();
+	}
+
+	renderWorkspaces() {
+		const container = this.containerEl.children[1] as HTMLElement;
+		container.empty();
+
+		const allWorkspaces = this.workspaceManager.getAllWorkspaces();
+
+		if (allWorkspaces.length === 0) {
+			const emptyState = container.createDiv("workspaces-empty-state");
+			emptyState.createEl("p", {
+				text: "No workspaces yet",
+				cls: "workspaces-empty-text",
+			});
+			emptyState.createEl("p", {
+				text: 'Use "Save current workspace" to create your first workspace.',
+				cls: "workspaces-empty-hint",
+			});
+			return;
+		}
+
+		// Check if smart group bar should be shown
+		const shouldShowSmartGroupBar =
+			this.plugin.settings.enableRecent ||
+			this.plugin.settings.enablePin ||
+			this.plugin.settings.enableStar ||
+			this.plugin.settings.enableBetaFolders;
+
+		// Render the smart group bar if any features are enabled
+		if (shouldShowSmartGroupBar) {
+			this.renderSmartGroupBar(container);
+		}
+
+		// Apply smart group filter
+		const workspaces = this.filterBySmartGroup(allWorkspaces);
+
+		// Main container
+		const listContainer = container.createDiv("workspaces-list");
+
+		// Render based on active smart group or folder view
+		if (this.plugin.settings.activeSmartGroup) {
+			// Smart group view - flat list
+			this.renderFlatWorkspaceList(listContainer, workspaces);
+		} else if (this.plugin.settings.enableBetaFolders) {
+			// Folder view - organized by folders (only if beta enabled)
+			this.renderFolderView(listContainer, workspaces);
+		} else {
+			// Default flat list when folders disabled
+			this.renderFlatWorkspaceList(listContainer, workspaces);
+		}
+	}
+
+	private renderSmartGroupBar(container: HTMLElement) {
+		const bar = container.createDiv("smart-group-bar");
+
+		// Only show filter buttons if enabled
+		if (this.plugin.settings.showSmartGroups) {
+			const groups: Array<{
+				id: SmartGroupType | null;
+				label: string;
+				icon: string;
+			}> = [{ id: null, label: "All", icon: "layout-grid" }];
+
+			// Add recent smart group if enabled
+			if (this.plugin.settings.enableRecent) {
+				groups.push({ id: "recent", label: "Recent", icon: "clock" });
+			}
+
+			// Add pin smart group if enabled
+			if (this.plugin.settings.enablePin) {
+				groups.push({ id: "pinned", label: "Pinned", icon: "pin" });
+			}
+
+			// Add star smart group if enabled
+			if (this.plugin.settings.enableStar) {
+				groups.push({
+					id: "favorites",
+					label: "Favorites",
+					icon: "star",
+				});
+			}
+
+			groups.forEach((group) => {
+				const btn = bar.createEl("button", {
+					cls: "smart-group-button",
+				});
+
+				if (this.plugin.settings.activeSmartGroup === group.id) {
+					btn.addClass("is-active");
+				}
+
+				const iconEl = btn.createSpan({ cls: "smart-group-icon" });
+				setIcon(iconEl, group.icon);
+
+				// Add aria-label for accessibility
+				btn.setAttribute("aria-label", group.label);
+
+				btn.addEventListener("click", () => {
+					this.plugin.settings.activeSmartGroup = group.id;
+					this.plugin.saveSettings();
+					this.renderWorkspaces();
+				});
+			});
+		}
+
+		// Add folder button (only if beta enabled)
+		if (this.plugin.settings.enableBetaFolders) {
+			const addFolderBtn = bar.createEl("button", {
+				cls: "smart-group-button add-folder-button",
+			});
+			addFolderBtn.setAttribute("aria-label", "Add folder");
+
+			const iconEl = addFolderBtn.createSpan({ cls: "smart-group-icon" });
+			setIcon(iconEl, "folder-plus");
+
+			addFolderBtn.addEventListener("click", (e) => {
+				e.preventDefault();
+				e.stopPropagation();
+				createFolderPrompt(this.plugin);
+			});
+		}
+	}
+
+	private filterBySmartGroup(
+		workspaces: WorkspaceConfig[]
+	): WorkspaceConfig[] {
+		const filter = this.plugin.settings.activeSmartGroup;
+
+		switch (filter) {
+			case "recent":
+				// Last 10 accessed workspaces
+				return workspaces
+					.filter((w) => w.lastAccessed)
+					.sort(
+						(a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0)
+					)
+					.slice(0, 10);
+
+			case "pinned":
+				return workspaces.filter((w) => w.pinned);
+
+			case "favorites":
+				return workspaces.filter((w) => w.starred);
+
+			case "all":
+			default:
+				return workspaces;
+		}
+	}
+
+	private renderFlatWorkspaceList(
+		container: HTMLElement,
+		workspaces: WorkspaceConfig[]
+	) {
+		// Sort by priority: pinned > starred > regular
+		const sortedWorkspaces = this.sortWorkspacesByPriority([...workspaces]);
+		sortedWorkspaces.forEach((workspace) => {
+			this.renderWorkspaceItem(container, workspace);
+		});
+	}
+
+	private renderFolderView(
+		container: HTMLElement,
+		workspaces: WorkspaceConfig[]
+	) {
+		// Sort by priority: pinned > starred > regular
+		const sortedWorkspaces = this.sortWorkspacesByPriority([...workspaces]);
+		const folders = this.getOrderedFolders();
+		const workspacesByFolder =
+			this.groupWorkspacesByFolder(sortedWorkspaces);
+
+		// Render all folders (even empty ones)
+		folders.forEach((folder) => {
+			const folderWorkspaces = workspacesByFolder.get(folder.id) || [];
+			this.renderFolder(container, folder, folderWorkspaces);
+		});
+
+		// Render workspaces without folder (at root level, no folder wrapper)
+		const noFolderWorkspaces = workspacesByFolder.get(null) || [];
+		if (noFolderWorkspaces.length > 0) {
+			noFolderWorkspaces.forEach((workspace) => {
+				this.renderWorkspaceItem(container, workspace);
+			});
+		}
+	}
+
+	private renderFolder(
+		container: HTMLElement,
+		folder: WorkspaceFolder | null,
+		workspaces: WorkspaceConfig[]
+	) {
+		const folderId = folder?.id || "no-folder";
+		const isCollapsed = folder
+			? this.plugin.settings.collapsedFolders.has(folder.id)
+			: false;
+
+		const folderSection = container.createDiv("workspace-folder");
+		folderSection.dataset.folderId = folderId;
+
+		// Folder header
+		const header = folderSection.createDiv("folder-header");
+
+		// Make folder draggable (not for "No Folder") and only if enabled
+		if (folder && this.plugin.settings.enableDragAndDrop) {
+			header.draggable = true;
+			header.addEventListener("dragstart", (e) =>
+				this.onFolderDragStart(e, folder.id)
+			);
+			header.addEventListener("dragend", (e) => this.onFolderDragEnd(e));
+			header.addEventListener("dragover", (e) => this.onDragOver(e));
+			header.addEventListener("drop", (e) =>
+				this.onFolderDrop(e, folder.id)
+			);
+			header.addEventListener("dragenter", (e) => this.onDragEnter(e));
+			header.addEventListener("dragleave", (e) => this.onDragLeave(e));
+		}
+
+		// Collapse icon
+		const collapseIcon = header.createSpan({ cls: "folder-collapse-icon" });
+		setIcon(collapseIcon, isCollapsed ? "chevron-right" : "chevron-down");
+
+		// Folder icon
+		if (folder?.icon) {
+			header.createSpan({ text: folder.icon, cls: "folder-icon" });
+		}
+
+		// Folder name
+		const folderName = folder?.name || "No Folder";
+		header.createSpan({ text: folderName, cls: "folder-name" });
+
+		// Count badge
+		header.createSpan({
+			text: workspaces.length.toString(),
+			cls: "folder-count",
+		});
+
+		// Folder color
+		if (folder?.color) {
+			header.style.borderLeftColor = folder.color;
+			header.style.borderLeftWidth = "3px";
+			header.style.borderLeftStyle = "solid";
+		}
+
+		// Click to toggle collapse
+		header.addEventListener("click", () => {
+			if (folder) {
+				if (isCollapsed) {
+					this.plugin.settings.collapsedFolders.delete(folder.id);
+				} else {
+					this.plugin.settings.collapsedFolders.add(folder.id);
+				}
+				this.plugin.saveSettings();
+				this.renderWorkspaces();
+			}
+		});
+
+		// Context menu for folder
+		if (folder) {
+			header.addEventListener("contextmenu", (e) => {
+				e.preventDefault();
+				this.showFolderContextMenu(folder, e);
+			});
+		}
+
+		// Folder content (workspaces)
+		if (!isCollapsed) {
+			const folderContent = folderSection.createDiv("folder-content");
+			workspaces.forEach((workspace) => {
+				this.renderWorkspaceItem(folderContent, workspace, folderId);
+			});
+		}
+	}
+
+	private renderWorkspaceItem(
+		container: HTMLElement,
+		workspace: WorkspaceConfig,
+		folderId?: string
+	) {
+		const item = container.createDiv("workspace-item");
+		const isActive =
+			workspace.id === this.plugin.settings.activeWorkspaceId;
+
+		if (isActive) {
+			item.addClass("is-active");
+		}
+
+		// Make draggable if enabled
+		if (this.plugin.settings.enableDragAndDrop) {
+			item.draggable = true;
+			item.dataset.workspaceId = workspace.id;
+			if (folderId) {
+				item.dataset.folderId = folderId;
+			}
+
+			// Drag events
+			item.addEventListener("dragstart", (e) =>
+				this.onDragStart(e, workspace.id, folderId || null)
+			);
+			item.addEventListener("dragend", (e) => this.onDragEnd(e));
+			item.addEventListener("dragover", (e) => this.onDragOver(e));
+			item.addEventListener("drop", async (e) => {
+				await this.onDrop(e, workspace.id, folderId);
+			});
+			item.addEventListener("dragenter", (e) => this.onDragEnter(e));
+			item.addEventListener("dragleave", (e) => this.onDragLeave(e));
+		}
+
+		// Main content
+		const content = item.createDiv("workspace-item-content");
+
+		// Drag handle (only if drag-and-drop is enabled)
+		if (this.plugin.settings.enableDragAndDrop) {
+			const dragHandle = content.createSpan({
+				cls: "workspace-drag-handle",
+			});
+			dragHandle.innerHTML = "⋮⋮";
+		}
+
+		// Pinned indicator
+		if (this.plugin.settings.enablePin && workspace.pinned) {
+			const pinIcon = content.createSpan({ cls: "workspace-pin-icon" });
+			setIcon(pinIcon, "pin");
+		}
+
+		// Starred indicator
+		if (this.plugin.settings.enableStar && workspace.starred) {
+			const starIcon = content.createSpan({ cls: "workspace-star-icon" });
+			setIcon(starIcon, "star");
+		}
+
+		// Icon
+		content.createSpan({
+			text: workspace.icon || "📋",
+			cls: "workspace-item-icon",
+		});
+
+		// Name
+		content.createSpan({
+			text: workspace.name,
+			cls: "workspace-item-name",
+		});
+
+		// Click to load
+		content.addEventListener("click", async (e) => {
+			if (
+				(e.target as HTMLElement).classList.contains(
+					"workspace-drag-handle"
+				)
+			) {
+				return;
+			}
+			await this.workspaceManager.loadWorkspace(workspace.id);
+			this.plugin.updateStatusBar(workspace.id);
+			this.renderWorkspaces();
+		});
+
+		// Context menu
+		content.addEventListener("contextmenu", (event) => {
+			event.preventDefault();
+			this.showWorkspaceContextMenu(workspace.id, event);
+		});
+
+		// Tooltip
+		if (workspace.description) {
+			content.setAttribute("aria-label", workspace.description);
+		}
+	}
+
+	private getOrderedFolders(): WorkspaceFolder[] {
+		const folders = Object.values(this.plugin.settings.folders);
+		const order = this.plugin.settings.folderOrder;
+
+		if (order.length === 0) {
+			return folders.sort((a, b) => (a.order || 0) - (b.order || 0));
+		}
+
+		const ordered: WorkspaceFolder[] = [];
+		const folderMap = new Map(folders.map((f) => [f.id, f]));
+
+		for (const id of order) {
+			const folder = folderMap.get(id);
+			if (folder) {
+				ordered.push(folder);
+				folderMap.delete(id);
+			}
+		}
+
+		// Add any new folders not in order
+		for (const folder of folderMap.values()) {
+			ordered.push(folder);
+		}
+
+		return ordered;
+	}
+
+	private groupWorkspacesByFolder(
+		workspaces: WorkspaceConfig[]
+	): Map<string | null, WorkspaceConfig[]> {
+		const grouped = new Map<string | null, WorkspaceConfig[]>();
+
+		// Get ordered workspaces to preserve custom order
+		const orderedWorkspaces = this.getOrderedWorkspaces();
+		const workspaceSet = new Set(workspaces.map((w) => w.id));
+
+		// Group workspaces by folder while maintaining order
+		orderedWorkspaces.forEach((workspace) => {
+			// Only include workspaces from the input array (for filtering)
+			if (!workspaceSet.has(workspace.id)) return;
+
+			const folderId = workspace.folderId || null;
+			if (!grouped.has(folderId)) {
+				grouped.set(folderId, []);
+			}
+			const group = grouped.get(folderId);
+			if (group) {
+				group.push(workspace);
+			}
+		});
+
+		return grouped;
+	}
+
+	private showWorkspaceContextMenu(workspaceId: string, event: MouseEvent) {
+		const menu = new Menu();
+		const workspace = this.workspaceManager.getWorkspaceById(workspaceId);
+
+		if (!workspace) return;
+
+		menu.addItem((item) => {
+			item.setTitle("Load workspace")
+				.setIcon("play")
+				.onClick(async () => {
+					await this.workspaceManager.loadWorkspace(workspaceId);
+					this.plugin.updateStatusBar(workspaceId);
+					this.renderWorkspaces();
+				});
+		});
+
+		menu.addItem((item) => {
+			item.setTitle("Update workspace")
+				.setIcon("save")
+				.onClick(async () => {
+					const layout = this.app.workspace.getLayout();
+					await this.workspaceManager.updateWorkspace(workspaceId, {
+						layout,
+						updatedAt: Date.now(),
+					});
+					this.renderWorkspaces();
+				});
+		});
+
+		menu.addSeparator();
+
+		// Pin/Unpin (only if enabled)
+		if (this.plugin.settings.enablePin) {
+			menu.addItem((item) => {
+				const isPinned = workspace.pinned || false;
+				item.setTitle(isPinned ? "Unpin workspace" : "Pin workspace")
+					.setIcon("pin")
+					.onClick(async () => {
+						await this.workspaceManager.updateWorkspace(
+							workspaceId,
+							{
+								pinned: !isPinned,
+							}
+						);
+						this.renderWorkspaces();
+					});
+			});
+		}
+
+		// Star/Unstar (only if enabled)
+		if (this.plugin.settings.enableStar) {
+			menu.addItem((item) => {
+				const isStarred = workspace.starred || false;
+				item.setTitle(isStarred ? "Unstar workspace" : "Star workspace")
+					.setIcon("star")
+					.onClick(async () => {
+						await this.workspaceManager.updateWorkspace(
+							workspaceId,
+							{
+								starred: !isStarred,
+							}
+						);
+						this.renderWorkspaces();
+					});
+			});
+		}
+		// Move to folder submenu (only if beta enabled)
+		if (this.plugin.settings.enableBetaFolders) {
+			menu.addItem((item) => {
+				item.setTitle("Move to folder")
+					.setIcon("folder")
+					.onClick(() => {
+						this.showMoveToFolderMenu(workspace, event);
+					});
+			});
+		}
+
+		menu.addSeparator();
+
+		menu.addItem((item) => {
+			item.setTitle("Rename workspace")
+				.setIcon("pencil")
+				.onClick(() => {
+					new RenameWorkspaceModal(
+						this.app,
+						this.workspaceManager,
+						this.plugin,
+						workspace,
+						() => this.renderWorkspaces()
+					).open();
+				});
+		});
+
+		menu.addItem((item) => {
+			item.setTitle("Delete workspace")
+				.setIcon("trash")
+				.onClick(async () => {
+					const confirmed = await this.confirmDelete(workspace.name);
+					if (confirmed) {
+						this.workspaceManager.deleteWorkspace(workspaceId);
+						if (
+							this.plugin.settings.activeWorkspaceId ===
+							workspaceId
+						) {
+							this.plugin.updateStatusBar(null);
+						}
+						this.renderWorkspaces();
+					}
+				});
+		});
+
+		menu.showAtMouseEvent(event);
+	}
+
+	private async confirmDelete(workspaceName: string): Promise<boolean> {
+		return new Promise((resolve) => {
+			const modal = new Modal(this.app);
+			modal.titleEl.setText("Delete workspace");
+			modal.contentEl.createEl("p", {
+				text: `Are you sure you want to delete "${workspaceName}"?`,
+			});
+
+			const buttonContainer = modal.contentEl.createDiv(
+				"modal-button-container"
+			);
+
+			buttonContainer
+				.createEl("button", { text: "Cancel" })
+				.addEventListener("click", () => {
+					modal.close();
+					resolve(false);
+				});
+
+			const deleteBtn = buttonContainer.createEl("button", {
+				text: "Delete",
+				cls: "mod-warning",
+			});
+			deleteBtn.addEventListener("click", () => {
+				modal.close();
+				resolve(true);
+			});
+
+			modal.open();
+		});
+	}
+
+	private showMoveToFolderMenu(
+		workspace: WorkspaceConfig,
+		event: MouseEvent
+	) {
+		const menu = new Menu();
+
+		// Option to remove from folder
+		if (workspace.folderId) {
+			menu.addItem((item) => {
+				item.setTitle("Remove from folder")
+					.setIcon("x")
+					.onClick(() => {
+						delete workspace.folderId;
+						this.plugin.saveSettings();
+						this.renderWorkspaces();
+					});
+			});
+			menu.addSeparator();
+		}
+
+		// List all folders
+		const folders = this.getOrderedFolders();
+		if (folders.length === 0) {
+			menu.addItem((item) => {
+				item.setTitle("No folders available").setDisabled(true);
+			});
+		} else {
+			folders.forEach((folder) => {
+				menu.addItem((item) => {
+					item.setTitle(folder.name)
+						.setIcon("folder")
+						.setChecked(workspace.folderId === folder.id)
+						.onClick(() => {
+							workspace.folderId = folder.id;
+							this.plugin.saveSettings();
+							this.renderWorkspaces();
+						});
+				});
+			});
+		}
+
+		menu.showAtMouseEvent(event);
+	}
+
+	private showFolderContextMenu(folder: WorkspaceFolder, event: MouseEvent) {
+		const menu = new Menu();
+
+		menu.addItem((item) => {
+			item.setTitle("Rename folder")
+				.setIcon("pencil")
+				.onClick(() => {
+					this.renameFolderPrompt(folder);
+				});
+		});
+
+		menu.addItem((item) => {
+			item.setTitle("Change color")
+				.setIcon("palette")
+				.onClick(() => {
+					this.changeFolderColorPrompt(folder);
+				});
+		});
+
+		menu.addSeparator();
+
+		menu.addItem((item) => {
+			item.setTitle("Delete folder")
+				.setIcon("trash")
+				.onClick(async () => {
+					const confirmed = await this.confirmDelete(folder.name);
+					if (confirmed) {
+						this.deleteFolder(folder.id);
+					}
+				});
+		});
+
+		menu.showAtMouseEvent(event);
+	}
+
+	private async renameFolderPrompt(folder: WorkspaceFolder) {
+		const modal = new Modal(this.app);
+		modal.titleEl.setText("Rename folder");
+
+		const input = modal.contentEl.createEl("input", {
+			type: "text",
+			value: folder.name,
+		});
+		input.style.width = "100%";
+		input.style.marginBottom = "1em";
+
+		const buttonContainer = modal.contentEl.createDiv(
+			"modal-button-container"
+		);
+
+		buttonContainer
+			.createEl("button", { text: "Cancel" })
+			.addEventListener("click", () => {
+				modal.close();
+			});
+
+		const saveBtn = buttonContainer.createEl("button", {
+			text: "Save",
+			cls: "mod-cta",
+		});
+		saveBtn.addEventListener("click", () => {
+			if (input.value.trim()) {
+				folder.name = input.value.trim();
+				this.plugin.saveSettings();
+				this.renderWorkspaces();
+				modal.close();
+			}
+		});
+
+		input.addEventListener("keydown", (e) => {
+			if (e.key === "Enter") {
+				saveBtn.click();
+			} else if (e.key === "Escape") {
+				modal.close();
+			}
+		});
+
+		modal.open();
+		input.focus();
+		input.select();
+	}
+
+	private async changeFolderColorPrompt(folder: WorkspaceFolder) {
+		const colors = [
+			{ name: "Red", value: "#e74c3c" },
+			{ name: "Blue", value: "#3498db" },
+			{ name: "Green", value: "#2ecc71" },
+			{ name: "Yellow", value: "#f39c12" },
+			{ name: "Purple", value: "#9b59b6" },
+			{ name: "Orange", value: "#e67e22" },
+			{ name: "Pink", value: "#ff69b4" },
+			{ name: "None", value: "" },
+		];
+
+		const menu = new Menu();
+
+		colors.forEach((color) => {
+			menu.addItem((item) => {
+				item.setTitle(color.name)
+					.setChecked(folder.color === color.value)
+					.onClick(() => {
+						folder.color = color.value || undefined;
+						this.plugin.saveSettings();
+						this.renderWorkspaces();
+					});
+			});
+		});
+
+		menu.showAtPosition({
+			x: window.innerWidth / 2,
+			y: window.innerHeight / 2,
+		});
+	}
+
+	private deleteFolder(folderId: string) {
+		// Move workspaces out of folder
+		const workspaces = this.workspaceManager.getAllWorkspaces();
+		workspaces.forEach((workspace) => {
+			if (workspace.folderId === folderId) {
+				delete workspace.folderId;
+			}
+		});
+
+		// Delete folder
+		delete this.plugin.settings.folders[folderId];
+		this.plugin.settings.folderOrder =
+			this.plugin.settings.folderOrder.filter((id) => id !== folderId);
+		this.plugin.settings.collapsedFolders.delete(folderId);
+
+		this.plugin.saveSettings();
+		this.renderWorkspaces();
+	}
+
+	private getOrderedWorkspaces() {
+		const allWorkspaces = this.workspaceManager.getAllWorkspaces();
+		const order = this.plugin.settings.workspaceOrder;
+
+		// If no custom order, return default (sorted by updatedAt)
+		if (!order || order.length === 0) {
+			return this.sortWorkspacesByPriority(allWorkspaces);
+		}
+
+		// Sort by custom order
+		const ordered = [];
+		const workspaceMap = new Map(allWorkspaces.map((w) => [w.id, w]));
+
+		// Add workspaces in custom order
+		for (const id of order) {
+			const workspace = workspaceMap.get(id);
+			if (workspace) {
+				ordered.push(workspace);
+				workspaceMap.delete(id);
+			}
+		}
+
+		// Add any new workspaces not in order yet
+		for (const workspace of workspaceMap.values()) {
+			ordered.push(workspace);
+		}
+
+		// Sort by priority: pinned > starred > regular
+		return this.sortWorkspacesByPriority(ordered);
+	}
+
+	private sortWorkspacesByPriority(
+		workspaces: WorkspaceConfig[]
+	): WorkspaceConfig[] {
+		// Only sort if at least one feature is enabled
+		const shouldSort =
+			this.plugin.settings.enablePin || this.plugin.settings.enableStar;
+
+		if (!shouldSort) {
+			return workspaces;
+		}
+
+		return workspaces.sort((a, b) => {
+			// Pinned workspaces come first (if enabled)
+			if (this.plugin.settings.enablePin) {
+				if (a.pinned && !b.pinned) return -1;
+				if (!a.pinned && b.pinned) return 1;
+			}
+
+			// Then starred workspaces (if enabled)
+			if (this.plugin.settings.enableStar) {
+				if (a.starred && !b.starred) return -1;
+				if (!a.starred && b.starred) return 1;
+			}
+
+			// Otherwise maintain existing order (return 0 to preserve stability)
+			return 0;
+		});
+	}
+
+	private onDragStart(
+		e: DragEvent,
+		workspaceId: string,
+		folderId?: string | null
+	) {
+		this.draggedWorkspaceId = workspaceId;
+		this.draggedFromFolder = folderId || null;
+		this.draggedElement = e.target as HTMLElement;
+		this.draggedElement.addClass("is-dragging");
+		if (e.dataTransfer) {
+			e.dataTransfer.effectAllowed = "move";
+			e.dataTransfer.setData("text/plain", workspaceId);
+		}
+	}
+
+	private onFolderDragStart(e: DragEvent, folderId: string) {
+		this.draggedFolderId = folderId;
+		this.draggedElement = e.currentTarget as HTMLElement;
+		this.draggedElement.addClass("is-dragging");
+		if (e.dataTransfer) {
+			e.dataTransfer.effectAllowed = "move";
+			e.dataTransfer.setData("text/plain", folderId);
+		}
+		e.stopPropagation();
+	}
+
+	private onDragEnd(e: DragEvent) {
+		if (this.draggedElement) {
+			this.draggedElement.removeClass("is-dragging");
+		}
+		this.draggedElement = null;
+		this.draggedWorkspaceId = null;
+
+		// Remove all drag-over classes
+		const items = this.containerEl.querySelectorAll(".workspace-item");
+		items.forEach((item) => {
+			item.removeClass("drag-over");
+		});
+	}
+
+	private onFolderDragEnd(e: DragEvent) {
+		if (this.draggedElement) {
+			this.draggedElement.removeClass("is-dragging");
+		}
+		this.draggedElement = null;
+		this.draggedFolderId = null;
+
+		// Remove all drag-over classes
+		const headers = this.containerEl.querySelectorAll(".folder-header");
+		headers.forEach((header) => {
+			header.removeClass("drag-over");
+		});
+	}
+
+	private onDragOver(e: DragEvent) {
+		e.preventDefault();
+		if (e.dataTransfer) {
+			e.dataTransfer.dropEffect = "move";
+		}
+	}
+
+	private onDragEnter(e: DragEvent) {
+		const target = e.currentTarget as HTMLElement;
+		if (target !== this.draggedElement) {
+			target.addClass("drag-over");
+		}
+	}
+
+	private onDragLeave(e: DragEvent) {
+		const target = e.currentTarget as HTMLElement;
+		target.removeClass("drag-over");
+	}
+
+	private async onDrop(
+		e: DragEvent,
+		targetWorkspaceId: string,
+		targetFolderId?: string
+	) {
+		e.preventDefault();
+		e.stopPropagation();
+
+		const target = e.currentTarget as HTMLElement;
+		target.removeClass("drag-over");
+
+		if (
+			!this.draggedWorkspaceId ||
+			this.draggedWorkspaceId === targetWorkspaceId
+		) {
+			return;
+		}
+
+		// Get dragged workspace
+		const draggedWorkspace = this.workspaceManager.getWorkspaceById(
+			this.draggedWorkspaceId
+		);
+		if (!draggedWorkspace) return;
+
+		// If beta folders enabled and dropped on a workspace in a different folder, move to that folder
+		if (this.plugin.settings.enableBetaFolders) {
+			const resolvedTargetFolderId =
+				targetFolderId === "no-folder" ? undefined : targetFolderId;
+			if (this.draggedFromFolder !== resolvedTargetFolderId) {
+				draggedWorkspace.folderId = resolvedTargetFolderId;
+			}
+		}
+
+		// Update order
+		const workspaces = this.getOrderedWorkspaces();
+
+		// Initialize workspaceOrder if empty
+		if (
+			!this.plugin.settings.workspaceOrder ||
+			this.plugin.settings.workspaceOrder.length === 0
+		) {
+			this.plugin.settings.workspaceOrder = workspaces.map((w) => w.id);
+		}
+
+		const newOrder = [...this.plugin.settings.workspaceOrder];
+
+		const draggedIndex = newOrder.indexOf(this.draggedWorkspaceId);
+		const targetIndex = newOrder.indexOf(targetWorkspaceId);
+
+		if (draggedIndex !== -1 && targetIndex !== -1) {
+			// Remove from old position
+			newOrder.splice(draggedIndex, 1);
+
+			// Calculate new position (account for removal)
+			let insertIndex = targetIndex;
+			if (draggedIndex < targetIndex) {
+				// Dragging down, insert after target
+				insertIndex = targetIndex;
+			} else {
+				// Dragging up, insert before target
+				insertIndex = targetIndex;
+			}
+
+			newOrder.splice(insertIndex, 0, this.draggedWorkspaceId);
+
+			// Save new order
+			this.plugin.settings.workspaceOrder = newOrder;
+			await this.plugin.saveSettings();
+
+			// Re-render
+			this.renderWorkspaces();
+		}
+	}
+
+	private onFolderDrop(e: DragEvent, targetFolderId: string) {
+		e.preventDefault();
+		e.stopPropagation();
+
+		const target = e.currentTarget as HTMLElement;
+		target.removeClass("drag-over");
+
+		if (!this.draggedFolderId || this.draggedFolderId === targetFolderId) {
+			return;
+		}
+
+		// Reorder folders
+		const folderOrder = [...this.plugin.settings.folderOrder];
+		const draggedIndex = folderOrder.indexOf(this.draggedFolderId);
+		const targetIndex = folderOrder.indexOf(targetFolderId);
+
+		if (draggedIndex !== -1 && targetIndex !== -1) {
+			// Remove from old position
+			folderOrder.splice(draggedIndex, 1);
+
+			// Calculate new position (account for removal)
+			let insertIndex = targetIndex;
+			if (draggedIndex < targetIndex) {
+				// Dragging down, insert after target
+				insertIndex = targetIndex;
+			} else {
+				// Dragging up, insert before target
+				insertIndex = targetIndex;
+			}
+
+			folderOrder.splice(insertIndex, 0, this.draggedFolderId);
+
+			// Save new order
+			this.plugin.settings.folderOrder = folderOrder;
+			this.plugin.saveSettings();
+
+			// Re-render
+			this.renderWorkspaces();
+		}
+	}
+
+	async onClose() {
+		// Cleanup if needed
+	}
+
+	// Method to refresh the view when workspaces are modified
+	refresh() {
+		this.renderWorkspaces();
+	}
+}

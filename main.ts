@@ -4,6 +4,7 @@ import { WorkspaceManager } from "./src/WorkspaceManager";
 import { registerCommands } from "./src/commands";
 import { SettingsTab } from "./src/SettingsTab";
 import { WorkspaceFuzzySuggestModal } from "./src/WorkspaceModal";
+import { WorkspacesView, VIEW_TYPE_WORKSPACES } from "./src/WorkspacesView";
 
 export default class SuperchargedWorkspacesPlugin extends Plugin {
 	settings: PluginSettings;
@@ -21,6 +22,12 @@ export default class SuperchargedWorkspacesPlugin extends Plugin {
 			() => this.saveSettings()
 		);
 
+		// Register workspaces view
+		this.registerView(
+			VIEW_TYPE_WORKSPACES,
+			(leaf) => new WorkspacesView(leaf, this)
+		);
+
 		// Register commands
 		registerCommands(
 			this,
@@ -28,12 +35,21 @@ export default class SuperchargedWorkspacesPlugin extends Plugin {
 			(workspaceId: string | null) => this.updateStatusBar(workspaceId)
 		);
 
+		// Add command to open workspaces panel
+		this.addCommand({
+			id: "open-workspaces-panel",
+			name: "Open workspaces panel",
+			callback: () => this.activateView(),
+		});
+
 		// Add ribbon icon
-		this.addRibbonIcon("layout-dashboard", "Load Workspace", () => {
+		this.addRibbonIcon("layout", "Load workspace", () => {
 			new WorkspaceFuzzySuggestModal(
 				this.app,
 				this.workspaceManager,
-				(workspaceId: string) => this.updateStatusBar(workspaceId)
+				(workspaceId: string) => {
+					this.updateStatusBar(workspaceId);
+				}
 			).open();
 		});
 
@@ -70,6 +86,23 @@ export default class SuperchargedWorkspacesPlugin extends Plugin {
 		} else {
 			this.settings.enabledCommands = new Set();
 		}
+		// Convert collapsedFolders array back to Set
+		if (data?.collapsedFolders && Array.isArray(data.collapsedFolders)) {
+			this.settings.collapsedFolders = new Set(data.collapsedFolders);
+		} else {
+			this.settings.collapsedFolders = new Set();
+		}
+		// Initialize workspaceOrder if not present
+		if (!this.settings.workspaceOrder) {
+			this.settings.workspaceOrder = [];
+		}
+		// Initialize folders if not present
+		if (!this.settings.folders) {
+			this.settings.folders = {};
+		}
+		if (!this.settings.folderOrder) {
+			this.settings.folderOrder = [];
+		}
 	}
 
 	async saveSettings() {
@@ -77,6 +110,7 @@ export default class SuperchargedWorkspacesPlugin extends Plugin {
 		const dataToSave = {
 			...this.settings,
 			enabledCommands: Array.from(this.settings.enabledCommands),
+			collapsedFolders: Array.from(this.settings.collapsedFolders),
 		};
 		await this.saveData(dataToSave);
 	}
@@ -112,6 +146,9 @@ export default class SuperchargedWorkspacesPlugin extends Plugin {
 				this.showWorkspaceMenu(event);
 			};
 		}
+
+		// Refresh the workspaces panel
+		this.refreshWorkspacesView();
 	}
 
 	updateStatusBarVisibility() {
@@ -130,6 +167,7 @@ export default class SuperchargedWorkspacesPlugin extends Plugin {
 			layout,
 			updatedAt: Date.now(),
 		});
+		this.refreshWorkspacesView();
 	}
 
 	private showWorkspaceMenu(event: MouseEvent) {
@@ -160,6 +198,38 @@ export default class SuperchargedWorkspacesPlugin extends Plugin {
 		}
 
 		menu.showAtMouseEvent(event);
+	}
+
+	async activateView() {
+		const { workspace } = this.app;
+
+		let leaf = workspace.getLeavesOfType(VIEW_TYPE_WORKSPACES)[0];
+
+		if (!leaf) {
+			// Open in right sidebar
+			const rightLeaf = workspace.getRightLeaf(false);
+			if (rightLeaf) {
+				await rightLeaf.setViewState({
+					type: VIEW_TYPE_WORKSPACES,
+					active: true,
+				});
+				leaf = rightLeaf;
+			}
+		}
+
+		if (leaf) {
+			workspace.revealLeaf(leaf);
+		}
+	}
+
+	refreshWorkspacesView() {
+		const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_WORKSPACES);
+		leaves.forEach((leaf) => {
+			const view = leaf.view;
+			if (view instanceof WorkspacesView) {
+				view.refresh();
+			}
+		});
 	}
 
 	registerWorkspaceCommands() {

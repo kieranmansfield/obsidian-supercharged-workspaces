@@ -45,6 +45,75 @@ export class SettingsTab extends PluginSettingTab {
 					})
 			);
 
+		new Setting(containerEl)
+			.setName("Enable workspace folders (Beta)")
+			.setDesc(
+				"Enable folder organization for workspaces. This is a beta feature."
+			)
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.enableBetaFolders)
+					.onChange(async (value) => {
+						this.plugin.settings.enableBetaFolders = value;
+						await this.plugin.saveSettings();
+						(this.plugin as any).refreshWorkspacesView?.();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Enable drag-and-drop reordering")
+			.setDesc("Allow reordering workspaces and folders by dragging them")
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.enableDragAndDrop)
+					.onChange(async (value) => {
+						this.plugin.settings.enableDragAndDrop = value;
+						await this.plugin.saveSettings();
+						(this.plugin as any).refreshWorkspacesView?.();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Enable pin workspaces")
+			.setDesc("Enable pinning workspaces to keep them at the top")
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.enablePin)
+					.onChange(async (value) => {
+						this.plugin.settings.enablePin = value;
+						await this.plugin.saveSettings();
+						(this.plugin as any).refreshWorkspacesView?.();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Enable star workspaces")
+			.setDesc("Enable starring workspaces as favorites")
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.enableStar)
+					.onChange(async (value) => {
+						this.plugin.settings.enableStar = value;
+						await this.plugin.saveSettings();
+						(this.plugin as any).refreshWorkspacesView?.();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Enable recent workspaces")
+			.setDesc(
+				"Enable tracking and filtering recently accessed workspaces"
+			)
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.enableRecent)
+					.onChange(async (value) => {
+						this.plugin.settings.enableRecent = value;
+						await this.plugin.saveSettings();
+						(this.plugin as any).refreshWorkspacesView?.();
+					})
+			);
+
 		// Workspace statistics
 		containerEl.createEl("h3", { text: "Workspace Statistics" });
 

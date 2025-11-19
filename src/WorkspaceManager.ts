@@ -46,6 +46,9 @@ export class WorkspaceManager {
 
 		try {
 			await this.app.workspace.changeLayout(workspace.layout);
+			// Update lastAccessed timestamp
+			workspace.lastAccessed = Date.now();
+			await this.saveSettings();
 			new Notice(`Loaded workspace: ${workspace.name}`);
 		} catch (error) {
 			console.error("Error loading workspace:", error);

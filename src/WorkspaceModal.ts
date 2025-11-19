@@ -1,11 +1,13 @@
 import { App, FuzzySuggestModal, Modal, Notice, Setting, Menu } from "obsidian";
 import { WorkspaceConfig } from "./types";
 import { WorkspaceManager } from "./WorkspaceManager";
+import SuperchargedWorkspacesPlugin from "../main";
 
 export class WorkspaceManagementModal extends Modal {
 	constructor(
 		app: App,
 		private workspaceManager: WorkspaceManager,
+		private plugin: SuperchargedWorkspacesPlugin,
 		private onWorkspaceLoad?: (id: string) => void
 	) {
 		super(app);
@@ -66,6 +68,7 @@ export class WorkspaceManagementModal extends Modal {
 				if (this.onWorkspaceLoad) {
 					this.onWorkspaceLoad(workspace.id);
 				}
+				(this.plugin as any).refreshWorkspacesView?.();
 				this.close();
 			});
 
@@ -76,6 +79,7 @@ export class WorkspaceManagementModal extends Modal {
 				new RenameWorkspaceModal(
 					this.app,
 					this.workspaceManager,
+					this.plugin,
 					workspace
 				).open();
 			});
@@ -88,6 +92,7 @@ export class WorkspaceManagementModal extends Modal {
 			deleteBtn.addEventListener("click", async () => {
 				if (confirm(`Delete workspace "${workspace.name}"?`)) {
 					await this.workspaceManager.deleteWorkspace(workspace.id);
+					(this.plugin as any).refreshWorkspacesView?.();
 					this.onOpen(); // Refresh the list
 				}
 			});
@@ -161,10 +166,12 @@ export class SaveWorkspaceModal extends Modal {
 	private name = "";
 	private description = "";
 	private icon = "";
+	private folderId: string | undefined = undefined;
 
 	constructor(
 		app: App,
 		private workspaceManager: WorkspaceManager,
+		private plugin: SuperchargedWorkspacesPlugin,
 		private onSave?: (workspace: WorkspaceConfig) => void
 	) {
 		super(app);
@@ -214,6 +221,26 @@ export class SaveWorkspaceModal extends Modal {
 					})
 			);
 
+		// Folder selection (only if beta enabled)
+		if (this.plugin.settings.enableBetaFolders) {
+			const folders = Object.values(this.plugin.settings.folders);
+			if (folders.length > 0) {
+				new Setting(contentEl)
+					.setName("Folder (optional)")
+					.setDesc("Assign this workspace to a folder")
+					.addDropdown((dropdown) => {
+						dropdown.addOption("", "No folder");
+						folders.forEach((folder) => {
+							dropdown.addOption(folder.id, folder.name);
+						});
+						dropdown.setValue(this.folderId || "");
+						dropdown.onChange((value) => {
+							this.folderId = value || undefined;
+						});
+					});
+			}
+		}
+
 		new Setting(contentEl)
 			.addButton((btn) =>
 				btn.setButtonText("Cancel").onClick(() => {
@@ -235,6 +262,11 @@ export class SaveWorkspaceModal extends Modal {
 								this.description.trim() || undefined,
 								this.icon.trim() || undefined
 							);
+						// Assign folder if selected
+						if (this.folderId) {
+							workspace.folderId = this.folderId;
+							await this.plugin.saveSettings();
+						}
 						if (this.onSave) {
 							this.onSave(workspace);
 						}
@@ -253,16 +285,24 @@ export class RenameWorkspaceModal extends Modal {
 	private name: string;
 	private description: string;
 	private icon: string;
+	private pinned: boolean;
+	private starred: boolean;
+	private folderId: string | undefined;
 
 	constructor(
 		app: App,
 		private workspaceManager: WorkspaceManager,
-		private workspace: WorkspaceConfig
+		private plugin: SuperchargedWorkspacesPlugin,
+		private workspace: WorkspaceConfig,
+		private onSave?: () => void
 	) {
 		super(app);
 		this.name = workspace.name;
 		this.description = workspace.description || "";
 		this.icon = workspace.icon || "";
+		this.pinned = workspace.pinned || false;
+		this.starred = workspace.starred || false;
+		this.folderId = workspace.folderId;
 	}
 
 	onOpen() {
@@ -304,6 +344,44 @@ export class RenameWorkspaceModal extends Modal {
 			);
 
 		new Setting(contentEl)
+			.setName("Pin workspace")
+			.setDesc("Pin this workspace for quick access")
+			.addToggle((toggle) =>
+				toggle.setValue(this.pinned).onChange((value) => {
+					this.pinned = value;
+				})
+			);
+
+		new Setting(contentEl)
+			.setName("Star workspace")
+			.setDesc("Add this workspace to your favorites")
+			.addToggle((toggle) =>
+				toggle.setValue(this.starred).onChange((value) => {
+					this.starred = value;
+				})
+			);
+
+		// Folder selection (only if beta enabled)
+		if (this.plugin.settings.enableBetaFolders) {
+			const folders = Object.values(this.plugin.settings.folders);
+			if (folders.length > 0) {
+				new Setting(contentEl)
+					.setName("Folder")
+					.setDesc("Assign this workspace to a folder")
+					.addDropdown((dropdown) => {
+						dropdown.addOption("", "No folder");
+						folders.forEach((folder) => {
+							dropdown.addOption(folder.id, folder.name);
+						});
+						dropdown.setValue(this.folderId || "");
+						dropdown.onChange((value) => {
+							this.folderId = value || undefined;
+						});
+					});
+			}
+		}
+
+		new Setting(contentEl)
 			.addButton((btn) =>
 				btn.setButtonText("Cancel").onClick(() => {
 					this.close();
@@ -325,8 +403,15 @@ export class RenameWorkspaceModal extends Modal {
 								description:
 									this.description.trim() || undefined,
 								icon: this.icon.trim() || undefined,
+								pinned: this.pinned,
+								starred: this.starred,
+								folderId: this.folderId,
 							}
 						);
+						(this.plugin as any).refreshWorkspacesView?.();
+						if (this.onSave) {
+							this.onSave();
+						}
 						this.close();
 					})
 			);
@@ -339,7 +424,11 @@ export class RenameWorkspaceModal extends Modal {
 }
 
 export class EditWorkspaceFuzzySuggestModal extends FuzzySuggestModal<WorkspaceConfig> {
-	constructor(app: App, private workspaceManager: WorkspaceManager) {
+	constructor(
+		app: App,
+		private workspaceManager: WorkspaceManager,
+		private plugin: SuperchargedWorkspacesPlugin
+	) {
 		super(app);
 		this.setPlaceholder("Select workspace to edit...");
 	}
@@ -381,7 +470,86 @@ export class EditWorkspaceFuzzySuggestModal extends FuzzySuggestModal<WorkspaceC
 		new RenameWorkspaceModal(
 			this.app,
 			this.workspaceManager,
+			this.plugin,
 			workspace
 		).open();
+	}
+}
+
+export class FilteredWorkspaceFuzzySuggestModal extends FuzzySuggestModal<WorkspaceConfig> {
+	constructor(
+		app: App,
+		private workspaceManager: WorkspaceManager,
+		private filterType: "recent" | "pinned" | "favorites",
+		private onWorkspaceLoad?: (id: string) => void
+	) {
+		super(app);
+		const titles = {
+			recent: "Recent workspaces",
+			pinned: "Pinned workspaces",
+			favorites: "Favorite workspaces",
+		};
+		this.setPlaceholder(`${titles[filterType]}...`);
+	}
+
+	getItems(): WorkspaceConfig[] {
+		const allWorkspaces = this.workspaceManager.getAllWorkspaces();
+
+		switch (this.filterType) {
+			case "recent":
+				return allWorkspaces
+					.filter((w) => w.lastAccessed)
+					.sort(
+						(a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0)
+					)
+					.slice(0, 10);
+			case "pinned":
+				return allWorkspaces.filter((w) => w.pinned);
+			case "favorites":
+				return allWorkspaces.filter((w) => w.starred);
+			default:
+				return allWorkspaces;
+		}
+	}
+
+	getItemText(workspace: WorkspaceConfig): string {
+		if (workspace.description) {
+			return `${workspace.name} ${workspace.description}`;
+		}
+		return workspace.name;
+	}
+
+	renderSuggestion(item: { item: WorkspaceConfig }, el: HTMLElement) {
+		const workspace = item.item;
+		el.createDiv({ cls: "workspace-fuzzy-item" }, (div) => {
+			const nameContainer = div.createDiv({
+				cls: "workspace-fuzzy-name",
+			});
+			if (workspace.icon) {
+				nameContainer.createSpan({
+					text: workspace.icon + " ",
+					cls: "workspace-icon",
+				});
+			}
+			nameContainer.createSpan({ text: workspace.name });
+			if (workspace.description) {
+				div.createDiv({
+					text: workspace.description,
+					cls: "workspace-fuzzy-description",
+				});
+			}
+			const date = new Date(workspace.updatedAt).toLocaleDateString();
+			div.createDiv({
+				text: `Last updated: ${date}`,
+				cls: "workspace-fuzzy-meta",
+			});
+		});
+	}
+
+	async onChooseItem(workspace: WorkspaceConfig) {
+		await this.workspaceManager.loadWorkspace(workspace.id);
+		if (this.onWorkspaceLoad) {
+			this.onWorkspaceLoad(workspace.id);
+		}
 	}
 }
