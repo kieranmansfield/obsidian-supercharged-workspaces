@@ -1,10 +1,22 @@
 {
 	"id": "obsidian-supercharged-workspaces",
 	"name": "Supercharged Workspaces",
-	"version": "0.0.1",
+	"version": "0.0.2",
 	"minAppVersion": "0.15.0",
 	"description": "Save, load, and manage workspace layouts with enhanced features for power users.",
 	"author": "Kieran Mansfield",
 	"authorUrl": "https://kieranmansfield.com",
-	"isDesktopOnly": false
+	"isDesktopOnly": false,
+	"commands": [
+		{
+			"id": "load-workspace",
+			"name": "Load workspace",
+			"hotkeys": [
+				{
+					"modifiers": ["Alt"],
+					"key": "W"
+				}
+			]
+		}
+	]
 }

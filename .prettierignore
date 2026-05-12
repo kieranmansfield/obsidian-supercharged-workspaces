@@ -1,0 +1,89 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+.output/
+.nuxt/
+dist/
+.netlify/
+
+# Cache directories
+.cache/
+.data/
+.github/
+
+# Generated files
+*.min.js
+*.min.css
+*.bundle.js
+*.bundle.css
+
+# Archive and backup files
+*.zip
+*.tar.gz
+*.rar
+OLD/
+oldApp/
+Archive.zip
+appOLD.zip
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Lock files
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Environment files
+.env
+.env.*
+
+# System files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Static assets that shouldn't be formatted
+public/images/
+public/icons/
+*.ico
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.svg
+*.webp
+*.avif
+
+# Fonts
+*.woff
+*.woff2
+*.ttf
+*.otf
+*.eot
+
+# Config files that might have specific formatting
+netlify.toml
+robots.txt
+
+# Shader files (handled by prettier-plugin-glsl but might want to exclude some)
+# *.glsl
+# *.vert
+# *.frag
+
+# Documentation that might need specific formatting
+README.md
+CHANGELOG.md
+
+main.js
+srcOLD/
