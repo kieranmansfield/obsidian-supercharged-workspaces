@@ -72,6 +72,12 @@ export function registerCommands(
 	plugin.addCommand({
 		id: 'load-workspace',
 		name: 'Load workspace',
+		hotkeys: [
+			{
+				modifiers: ['Alt'],
+				key: 'w',
+			},
+		],
 		callback: () => {
 			const modal = new WorkspaceFuzzySuggestModal(
 				plugin.app,
